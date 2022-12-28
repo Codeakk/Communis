@@ -855,7 +855,7 @@ contract Communis is ERC20, ERC20Burnable {
     {
         if(currentDay >= ebd.nextPayoutDay) {
             uint256 numberOfPayouts = ((currentDay - ebd.nextPayoutDay) / 91) + 1;
-            uint256 payout = (stakedCodeak / 80) * numberOfPayouts;
+            uint256 payout = (stakedCodeak * numberOfPayouts) / 80;
 
             _mint(msg.sender, payout);
 
