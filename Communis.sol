@@ -731,7 +731,17 @@ contract Communis is ERC20, ERC20Burnable {
         );
     }
 
-
+    /**
+     * 
+     * @dev Reads current RestakeEndDebt
+     * 
+     * Maintains latest end bonus payout day
+     * 
+     * Maintains largest amount staked days
+     * 
+     * Accumulates stake's shares as total sharesDebt
+     * 
+     */
     function _updateRestakeEndDebt(uint256 currentDay, Stake memory s)
         private
     {
@@ -743,6 +753,15 @@ contract Communis is ERC20, ERC20Burnable {
         red.sharesDebt += uint72(s.stakeShares);
     }
 
+    /**
+     * 
+     * @dev Reads current RestakeEndDebt
+     * 
+     * Assure new start stake (Stake Memory ss) meets requirements against RestakeEndDebt for Restake Bonus
+     * 
+     * Delete any restake debt if obligations are met
+     * 
+     */
     function _validateRestakeBonus(Stake memory ss)
         private
     {
@@ -759,6 +778,14 @@ contract Communis is ERC20, ERC20Burnable {
         delete addressRestakeEndDebt[msg.sender];
     }
 
+    /**
+     * 
+     * @dev Reverse engineer amount of bonus HEX hearts that were used in 
+     * determining stake's HEX shares (this data is not kept in HEX storage)
+     * 
+     * Formula is derived from HEX smart contract
+     * 
+     */
     function getStakesBonusHearts(Stake memory s)
         internal pure
         returns (uint256 stakesBonusHearts)
@@ -772,6 +799,14 @@ contract Communis is ERC20, ERC20Burnable {
         stakesBonusHearts = s.stakedHearts * ((cappedDays * (15 * (10 ** 16))) + (cappedHearts * 1820)) / (273 * (10 ** 18)); 
     }
 
+    /**
+     * 
+     * @dev Recalculate amount of bonus HEX hearts that would be applied if 
+     * the cappedDays were not limited to 3640 days
+     * 
+     * Formula is derived from HEX smart contract
+     * 
+     */
     function getRecalculatedBonusHearts(Stake memory s)
         internal pure
         returns (uint256 recalculatedBonusHearts)
@@ -783,6 +818,19 @@ contract Communis is ERC20, ERC20Burnable {
         recalculatedBonusHearts = s.stakedHearts * ((cappedDays * (15 * (10 ** 16))) + (cappedHearts * 1820)) / (273 * (10 ** 18)); 
     }
 
+    /**
+     * 
+     * @dev Creates a consistent PayoutResponse for any given Stake
+     * 
+     * Reverse engineer stakes original share rate as stakesOriginalShareRate using reverse engineered stakes bonus hearts
+     * 
+     * Recalculate Stake Shares with new Recalculated Bonus Hearts and using Reverse engineered stakesOriginalShareRate
+     * 
+     * Calculate penalty for amount days staked out of possible max length staked days of 5555, derived from HEX smart contract
+     * 
+     * Max payout represents the maximum possible value that can be minted for any given Stake
+     * 
+     */
     function getPayout(Stake memory s)
         public pure
         returns (PayoutResponse memory pr)
@@ -798,6 +846,31 @@ contract Communis is ERC20, ERC20Burnable {
         pr.maxPayout = (recalculatedStakeShares * penalty) / (10 ** 15);
     }
 
+    /**
+     * 
+     * @dev Creates a consistent payout for the Start Bonus given any Stake
+     * 
+     * If applyRestakeBonus, staked days range between 365 and 5555: 
+     *      365 days gives bonusPercentage of 50000000000 and thus a 20% payout of maxPayout
+     *      5555 days gives bonusPercentage of 20000000000 and thus a 50% payout of maxPayout
+     * 
+     * Else if staked days greater than 364, staked days range between 365 and 5555: 
+     *      365 days gives bonusPercentage of 100000000000 and thus a 10% payout of maxPayout
+     *      5555 days gives bonusPercentage of 40000000000 and thus a 25% payout of maxPayout
+     * 
+     * Else, staked days range between 180 and 364:
+     *      180 days gives bonusPercentage of 200000000000 and thus a 5% payout of maxPayout
+     *      364 days gives bonusPercentage of ~100540540540 and thus a ~9.946% payout of maxPayout
+     * 
+     * Penalty 
+     *      global share rate is derived from HEX smart contract
+     *      global share rate can only increase over time
+     *      distance between current global share rate and reverse engineered stakes original share rate determine penalty
+     * I.E.
+     *      100,000 stakes share rate / 200,000 global share rate = you keep 50% of Start Bonus payout
+     *      100,000 stakes share rate / 400,000 global share rate = you keep 25% of Start Bonus payout
+     * 
+     */
     function getStartBonusPayout(uint256 stakedDays, uint256 lockedDay, uint256 maxPayout, uint256 stakesOriginalShareRate, uint256 currentDay, uint256 globalShareRate, bool applyRestakeBonus)
         public pure
         returns (uint256 payout)
@@ -828,6 +901,11 @@ contract Communis is ERC20, ERC20Burnable {
         }
     }
 
+    /**
+     * 
+     * @dev Allows withdraw of staked Codeak associated with msg.snder address
+     * 
+     */
     function withdrawStakedCodeak(uint256 withdrawAmount)
         external
     {
@@ -839,6 +917,15 @@ contract Communis is ERC20, ERC20Burnable {
         _emitStakeWithdrawCodeak(withdrawAmount, addressStakedCodeak[msg.sender]);
     }
 
+    /**
+     * 
+     * @dev External call to mint stake bonus for staking Codeak
+     * 
+     * Must have end bonus payout debt
+     * 
+     * Must have staked Codeak greater than or equal to end bonus payout debt
+     * 
+     */
     function mintStakeBonus()
         external
     {
@@ -850,6 +937,18 @@ contract Communis is ERC20, ERC20Burnable {
         }
     }
 
+    /**
+     * 
+     * @dev Mints stake bonus for staking Codeak
+     * 
+     * Must have current day derived from HEX smart contract greater than next payout day
+     * 
+     * Calculates number of payouts based on distance between current day and next payout day
+     * with no limit between the amount of days between them but in 91 day chunks
+     *  
+     * Sets next payout day depending on number of payouts minted
+     * 
+     */
     function _mintStakeBonus(EndBonusDebt storage ebd, uint256 currentDay, uint256 stakedCodeak)
         private
     {
@@ -864,6 +963,11 @@ contract Communis is ERC20, ERC20Burnable {
         }
     }
 
+    /**
+     * 
+     * @dev Allows batch minting of Start Bonuses to reduce gas costs
+     * 
+     */
     function mintStartBonusBatch(stakeIndexIdAmount[] calldata stakeIndexIdAmounts, address referrer)
         external
     {
@@ -879,12 +983,30 @@ contract Communis is ERC20, ERC20Burnable {
         }
     }
 
+    /**
+     * 
+     * @dev External call for single Start Bonuses
+     * 
+     */
     function mintStartBonus(uint256 stakeIndex, uint256 stakeID, bool applyRestakeBonus, address referrer, uint256 stakeAmount)
         external
     {
         _mintStartBonus(stakeIndex, stakeID, applyRestakeBonus, referrer, HEX.currentDay(), getGlobalShareRate(), stakeAmount);
     }
 
+    /**
+     * 
+     * @dev Mints a bonus for starting a stake in HEX smart contract
+     * 
+     * Start bonus is only an upfront cut of the total max payout available for any given stake
+     * 
+     * Stake must not have its Start or End Bonus minted already
+     * 
+     * Stake shares must be at least 10000 to truncate low value edge cases
+     * 
+     * Start bonus forces minting Stake Bonus, if available, before staking new Codeak
+     * 
+     */
     function _mintStartBonus(uint256 stakeIndex, uint256 stakeID, bool applyRestakeBonus, address referrer, uint256 currentDay, uint256 globalShareRate, uint256 stakeAmount)
         private
     {
@@ -938,6 +1060,11 @@ contract Communis is ERC20, ERC20Burnable {
         _emitNewMint(payout, s.stakedDays, pr.recalculatedStakeShares, pr.stakesOriginalShareRate, s.stakedHearts, s.stakeID, referrer, bt);
     }
 
+    /**
+     * 
+     * @dev Allows batch minting of End Bonuses to reduce gas costs
+     * 
+     */
     function mintEndBonusBatch(stakeIndexIdAmount[] calldata stakeIndexIdAmounts, address referrer)
         external
     {
@@ -952,12 +1079,34 @@ contract Communis is ERC20, ERC20Burnable {
         }
     }
 
+    /**
+     * 
+     * @dev External call for single End Bonuses
+     * 
+     */
     function mintEndBonus(uint256 stakeIndex, uint256 stakeID, address referrer, uint256 stakeAmount)
         external
     {
         _mintEndBonus(stakeIndex, stakeID, referrer, HEX.currentDay(), stakeAmount);
     }
 
+    /**
+     * 
+     * @dev Mints a bonus for fulfilling a stakes staked days commitment in HEX smart contract
+     * 
+     * End bonus is the remaining total max payout available for any given stake, reduced only based on previous Start Stake Bonus minted
+     * 
+     * Stake must not have its End Bonus minted already
+     * 
+     * Stake shares must be at least 10000 to truncate low value edge cases
+     * 
+     * 50% of End Bonus Payout is accumulated as End Bonus Debt
+     * 
+     * End bonus forces minting Stake Bonus, if available, before staking new Codeak
+     * 
+     * Allows staking new Codeak before checking if staked Codeak is less than End Bonus Debt
+     * 
+     */
     function _mintEndBonus(uint256 stakeIndex, uint256 stakeID, address referrer, uint256 currentDay, uint256 stakeAmount)
         private
     {
@@ -1014,6 +1163,15 @@ contract Communis is ERC20, ERC20Burnable {
         ebd.payoutDebt += payoutDebt;
     }
 
+    /**
+     * 
+     * @dev Mints a bonus for cleaning stale shares in the HEX smart contract
+     * 
+     * Stake must not already be unlocked 
+     * 
+     * Stake must not have its End or Good Accounting Bonus minted already
+     * 
+     */
     function mintGoodAccountingBonus(address stakeOwner, uint256 stakeIndex, uint256 stakeID)
         external
     {
