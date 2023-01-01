@@ -903,7 +903,7 @@ contract Communis is ERC20, ERC20Burnable {
 
     /**
      * 
-     * @dev Allows withdraw of staked Codeak associated with msg.snder address
+     * @dev Allows withdraw of staked Codeak associated with msg.sender address
      * 
      */
     function withdrawStakedCodeak(uint256 withdrawAmount)
